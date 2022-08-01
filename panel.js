@@ -70,6 +70,7 @@ const T4 = 'showDesktopTimeout';
 const T5 = 'trackerFocusAppTimeout';
 const T6 = 'scrollPanelDelayTimeout';
 const T7 = 'waitPanelBoxAllocation';
+const T8 = 'showPopupMenuTouchTimeout';
 
 var Panel = GObject.registerClass({
 }, class Panel extends St.Widget {
@@ -975,31 +976,36 @@ var Panel = GObject.registerClass({
         this._timeoutsHandler.add([T7, 0, () => Utils.setClip(clipContainer, clipContainer.x, clipContainer.y, this.panelBox.width, this.panelBox.height + this.cornerSize)]);
     }
 
+    _createPopupAtPosition(x, y) {
+      Main.layoutManager.setDummyCursorGeometry(x, y, 0, 0);
+
+      this.showAppsIconWrapper.createMenu();
+      this.showAppsIconWrapper.popupMenu(Main.layoutManager.dummyCursor);
+    }
+
     _onButtonPress(actor, event) {
         let type = event.type();
         let isPress = type == Clutter.EventType.BUTTON_PRESS;
         let button = isPress ? event.get_button() : -1;
         let [stageX, stageY] = event.get_coords();
 
-        if (button == 3 && global.stage.get_actor_at_pos(Clutter.PickMode.REACTIVE, stageX, stageY) == this.panel) {
+        if(type == Clutter.EventType.TOUCH_BEGIN) {
+            this._timeoutsHandler.add([T8, 500, () => this._createPopupAtPosition(stageX, stageY)]);
+        } else if (button == 3 && global.stage.get_actor_at_pos(Clutter.PickMode.REACTIVE, stageX, stageY) == this.panel) {
             //right click on an empty part of the panel, temporarily borrow and display the showapps context menu
-            Main.layoutManager.setDummyCursorGeometry(stageX, stageY, 0, 0);
-
-            this.showAppsIconWrapper.createMenu();
-            this.showAppsIconWrapper.popupMenu(Main.layoutManager.dummyCursor);
-
+            this._createPopupAtPosition(stageX, stageY);
             return Clutter.EVENT_STOP;
         } else if (Main.modalCount > 0 || event.get_source() != actor || 
             (!isPress && type != Clutter.EventType.TOUCH_BEGIN) ||
             (isPress && button != 1)) {
+            this._timeoutsHandler.remove(T8);
             return Clutter.EVENT_PROPAGATE;
         }
 
-        let params = this.checkIfVertical() ? [stageY, 'y', 'height'] : [stageX, 'x', 'width'];
-        let dragWindow = this._getDraggableWindowForPosition.apply(this, params.concat(['maximized_' + this.getOrientation() + 'ly']));
-
         if (!dragWindow)
             return Clutter.EVENT_PROPAGATE;
+
+        this._timeoutsHandler.remove(T8);
 
         global.display.begin_grab_op(dragWindow,
                                      Meta.GrabOp.MOVING,
